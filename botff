@@ -1,0 +1,387 @@
+<?php  
+ob_start();  
+error_reporting(0);  
+
+class WolfFactory {
+    private $t, $a, $d, $binance_id, $short_api;
+
+    public function __construct() {
+        // البيانات الخاصة بك مدمجة وجاهزة للعمل تلقائياً هنا
+        $this->t = '8860089713:AAGFDiNlsmlTzk4LK8BxTpta1EsL6zgWPhA'; // توكن بوتك الرئيسي
+        $this->a = '8553407440'; // الأيدي الخاص بك كأدمن
+        $this->binance_id = '1025308119'; // أيدي بينانس الخاص بك للدفع
+        $this->short_api = 'Baf93f43427b9f691ef9068d019aeccaca69fbea'; // الـ API الخاص بك لاختصار الروابط
+
+        $this->d = __DIR__.'/@j49_c_data';
+        if(!is_dir($this->d)) mkdir($this->d, 0777, true);
+        
+        $c = $this->cfg();
+        $this->saveCfg($c);
+        $this->init();
+    }  
+
+    private function cfg() {
+        $f = $this->d.'/c.json';
+        return file_exists($f) ? json_decode(file_get_contents($f), 1) : [];
+    }  
+
+    private function saveCfg($c) {
+        file_put_contents($this->d.'/c.json', json_encode($c));
+    }  
+
+    private function init() {
+        $fs = ['s', 'c1', 'c2', 'u', 'b', 'm', 'st', 'p', 'h', 'stt', 'fw', 'bc', 'ms', 'vip'];
+        foreach($fs as $f) {
+            $p = $this->d."/$f.txt";
+            if(!file_exists($p)) file_put_contents($p, '');
+        }
+        if(!is_dir($this->d.'/bots')) mkdir($this->d.'/bots', 0777, 1);
+    }  
+
+    private function api($m, $d=[]) {
+        $u = "https://api.telegram.org/bot{$this->t}/$m";
+        $ch = curl_init($u);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_POST, 1);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($d));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);
+        $r = curl_exec($ch);
+        curl_close($ch);
+        return json_decode($r);
+    }  
+
+    private function send($c, $t, $kb=null, $pm=null) {
+        $p = ['chat_id'=>$c, 'text'=>$t];
+        if($kb) $p['reply_markup'] = json_encode($kb);
+        if($pm) $p['parse_mode'] = $pm;
+        $this->api('sendMessage', $p);
+    }  
+
+    private function edit($c, $m, $t, $kb=null, $pm=null) {
+        $p = ['chat_id'=>$c, 'message_id'=>$m, 'text'=>$t];
+        if($kb) $p['reply_markup'] = json_encode($kb);
+        if($pm) $p['parse_mode'] = $pm;
+        $this->api('editMessageText', $p);
+    }  
+
+    private function ans($id, $t, $a=0) {
+        $this->api('answerCallbackQuery', ['callback_query_id'=>$id, 'text'=>$t, 'show_alert'=>$a]);
+    }  
+
+    private function rd($f) {
+        $p = $this->d."/$f.txt";
+        if(!file_exists($p)) return [];
+        return array_filter(explode("\n", trim(file_get_contents($p))));
+    }  
+
+    private function wr($f, $l) {
+        if(!in_array($l, $this->rd($f))) {
+            file_put_contents($this->d."/$f.txt", $l."\n", FILE_APPEND);
+        }
+    }  
+
+    private function isB($u) { return in_array($u, $this->rd('b')); }  
+    private function isM($u) { return in_array($u, $this->rd('m')); }  
+    private function addM($u) { if(!$this->isM($u)) $this->wr('m', $u); }  
+    private function isVip($u) { return in_array($u, $this->rd('vip')); }
+
+    private function subReq($u) {
+        if($this->isVip($u)) return 0; // تخطي الإعلانات والقنوات للمشترك VIP
+
+        $c1 = @file_get_contents($this->d.'/c1.txt');
+        $c2 = @file_get_contents($this->d.'/c2.txt');
+        if(!$c1 && !$c2) return 0;
+        $ck = function($ch) use ($u) {
+            if(!$ch) return 0;
+            $r = json_decode(@file_get_contents("https://api.telegram.org/bot{$this->t}/getChatMember?chat_id=$ch&user_id=$u"), 1);
+            $s = $r['result']['status'] ?? '';
+            return $s == 'left' || $s == 'kicked';
+        };
+        return $ck($c1) || $ck($c2);
+    }  
+
+    public function run() {
+        $up = json_decode(file_get_contents('php://input'));
+        if(!$up) return;
+        $msg = $up->message ?? null;
+        $cb = $up->callback_query ?? null;
+        $uid = $msg->from->id ?? $cb->from->id ?? 0;
+        $chat = $msg->chat->id ?? $cb->message->chat->id ?? 0;
+        $mid = $msg->message_id ?? $cb->message->message_id ?? 0;
+        $txt = $msg->text ?? '';
+        $cbd = $cb->data ?? '';
+        $name = $msg->from->first_name ?? $cb->from->first_name ?? '';
+        $user = $msg->from->username ?? $cb->from->username ?? '';
+
+        if($uid && $uid != $this->a && $this->isB($uid)) {
+            $this->send($chat, "🚫 أنت محظور من استخدام البوت.");
+            return;
+        }
+
+        if($uid && $uid != $this->a && $this->subReq($uid)) {
+            $c1 = @file_get_contents($this->d.'/c1.txt');
+            $c2 = @file_get_contents($this->d.'/c2.txt');
+            $this->send($chat, "⚠️ عذراً عزيزي، يجب عليك الاشتراك في قنوات البوت أولاً للاستخدام:\n\n1️⃣ $c1\n2️⃣ $c2\n\n👑 أو يمكنك تفعيل قسم الـ VIP للاستخدام المباشر وتخطي كافة الروابط الإعلانية!");
+            return;
+        }
+
+        $st = @file_get_contents($this->d.'/s.txt');
+        $c1 = @file_get_contents($this->d.'/c1.txt');
+        $c2 = @file_get_contents($this->d.'/c2.txt');
+        $uc = count($this->rd('u'));
+        $vc = count($this->rd('vip'));
+
+        if($msg && !in_array($uid, $this->rd('u'))) $this->wr('u', $uid);
+
+        $stt = json_decode(@file_get_contents($this->d.'/stt.txt'), 1) ?: [];
+        if(!isset($stt['bot'])) $stt['bot'] = 'on';
+        file_put_contents($this->d.'/stt.txt', json_encode($stt));
+        $on = $stt['bot'] == 'on';
+
+        if($msg && !$on && $uid != $this->a) {
+            $this->send($chat, "🔧 البوت في صيانة حالياً، عد لاحقاً.");
+            return;
+        }
+
+        // لوحة تحكم الأدمن (أنت)
+        $admin_kb = [
+            'inline_keyboard' => [
+                [['text'=>'🛑 إيقاف البوت', 'callback_data'=>'off'], ['text'=>'▶️ تفعيل البوت', 'callback_data'=>'on']],
+                [['text'=>'🚫 حظر', 'callback_data'=>'ban_sec'], ['text'=>'📨 رسالة للمستخدمين', 'callback_data'=>'msg_sec']],
+                [['text'=>'👑 قسم الـ VIP', 'callback_data'=>'vip_sec']],
+                [['text'=>'➕ قناة 1', 'callback_data'=>'set_ch1'], ['text'=>'➖ قناة 1', 'callback_data'=>'del_ch1']],
+                [['text'=>'➕ قناة 2', 'callback_data'=>'set_ch2'], ['text'=>'➖ قناة 2', 'callback_data'=>'del_ch2']],
+                [['text'=>'📋 عرض القنوات', 'callback_data'=>'show_chs']],
+                [['text'=>'↪️ توجيه', 'callback_data'=>'fw'], ['text'=>'📢 إذاعة', 'callback_data'=>'bc']],
+                [['text'=>'📊 الإحصائيات', 'callback_data'=>'stats']],
+                [['text'=>'🔧 API 5sim', 'callback_data'=>'api']]
+            ]
+        ];
+
+        if($txt == '/start' && $uid == $this->a) {
+            $this->send($chat, "⚙️ أهلاً بك مطورنا في لوحة التحكم.\nحالة البوت الحالية: " . ($on ? '✅ يعمل' : '❌ متوقف'), $admin_kb);
+            return;
+        }  
+
+        if($cbd == 'back_admin') {
+            $this->edit($chat, $mid, "⚙️ لوحة التحكم\nحالة البوت: " . ($on ? '✅ يعمل' : '❌ متوقف'), $admin_kb);
+        }  
+
+        if($cbd == 'on') {
+            $stt['bot'] = 'on'; file_put_contents($this->d.'/stt.txt', json_encode($stt));
+            $this->edit($chat, $mid, "✅ تم تشغيل البوت بنجاح.", [['inline_keyboard'=>[[['text'=>'🔙 عودة', 'callback_data'=>'back_admin']]]]]);
+        }  
+
+        if($cbd == 'off') {
+            $stt['bot'] = 'off'; file_put_contents($this->d.'/stt.txt', json_encode($stt));
+            $this->edit($chat, $mid, "❌ تم إيقاف البوت بنجاح.", [['inline_keyboard'=>[[['text'=>'🔙 عودة', 'callback_data'=>'back_admin']]]]]);
+        }  
+
+        // إدارة القنوات المربوطة والإذاعة
+        if($cbd=='set_ch1'){ file_put_contents($this->d.'/s.txt','set_ch1'); $this->edit($chat,$mid,"📢 أرسل معرف أو رابط القناة الأولى:",['inline_keyboard'=>[[['text'=>'🔙 عودة','callback_data'=>'back_admin']]]]);}  
+        if($st=='set_ch1'&&$txt&&$uid==$this->a){ file_put_contents($this->d.'/c1.txt',$txt); file_put_contents($this->d.'/s.txt',''); $this->send($chat,"✅ تم حفظ القناة الأولى.",['inline_keyboard'=>[[['text'=>'🔙 عودة','callback_data'=>'back_admin']]]]);}  
+        if($cbd=='del_ch1'){ file_put_contents($this->d.'/c1.txt',''); $this->edit($chat,$mid,"🗑 تم حذف القناة الأولى.",['inline_keyboard'=>[[['text'=>'🔙 عودة','callback_data'=>'back_admin']]]]);}  
+        if($cbd=='set_ch2'){ file_put_contents($this->d.'/s.txt','set_ch2'); $this->edit($chat,$mid,"📢 أرسل معرف أو رابط القناة الثانية:",['inline_keyboard'=>[[['text'=>'🔙 عودة','callback_data'=>'back_admin']]]]);}  
+        if($st=='set_ch2'&&$txt&&$uid==$this->a){ file_put_contents($this->d.'/c2.txt',$txt); file_put_contents($this->d.'/s.txt',''); $this->send($chat,"✅ تم حفظ القناة الثانية.",['inline_keyboard'=>[[['text'=>'🔙 عودة','callback_data'=>'back_admin']]]]);}  
+        if($cbd=='del_ch2'){ file_put_contents($this->d.'/c2.txt',''); $this->edit($chat,$mid,"🗑 تم حذف القناة الثانية.",['inline_keyboard'=>[[['text'=>'🔙 عودة','callback_data'=>'back_admin']]]]);}  
+        if($cbd=='show_chs'){ $this->edit($chat,$mid,"📋 القنوات الحالية المربوطة بالبوت:\n\n1️⃣ $c1\n2️⃣ $c2",['inline_keyboard'=>[[['text'=>'🔙 عودة','callback_data'=>'back_admin']]]]);}  
+        
+        if($cbd=='stats'){ 
+            $this->edit($chat,$mid,"📊 إحصائيات البوت بالكامل:\n\n👥 عدد المشتركين الكلي: $uc\n👑 عدد المشتركين VIP: $vc",['inline_keyboard'=>[[['text'=>'🔙 عودة','callback_data'=>'back_admin']]]]);
+        }  
+
+        if($cbd=='fw'){ file_put_contents($this->d.'/s.txt','fw'); $this->edit($chat,$mid,"↪️ قم بتوجيه الرسالة الآن ليتم إرسالها لجميع الأعضاء:",['inline_keyboard'=>[[['text'=>'🔙 عودة','callback_data'=>'back_admin']]]]);}  
+        if($st=='fw'&&$msg&&$uid==$this->a){ $us=$this->rd('u'); foreach($us as $u) if($u)$this->api('forwardMessage',['chat_id'=>$u,'from_chat_id'=>$chat,'message_id'=>$mid]); $this->send($chat,"✅ تم التوجيه للجميع بنجاح.",['inline_keyboard'=>[[['text'=>'🔙 عودة','callback_data'=>'back_admin']]]]); file_put_contents($this->d.'/s.txt','');}  
+        if($cbd=='bc'){ file_put_contents($this->d.'/s.txt','bc'); $this->edit($chat,$mid,"📢 أرسل النص الذي تريد إذاعته لكل المستخدمين:",['inline_keyboard'=>[[['text'=>'🔙 عودة','callback_data'=>'back_admin']]]]);}  
+        if($st=='bc'&&$txt&&$uid==$this->a){ $us=$this->rd('u'); foreach($us as $u) if($u)$this->send($u,$txt); $this->send($chat,"✅ تم إرسال الإذاعة بنجاح.",['inline_keyboard'=>[[['text'=>'🔙 عودة','callback_data'=>'back_admin']]]]); file_put_contents($this->d.'/s.txt','');}  
+
+        // قسم إدارة الحظر
+        if($cbd=='ban_sec'){ $bc=count($this->rd('b')); $this->edit($chat,$mid,"🚫 قسم الحظر (المحظورين حالياً: $bc)\nاختر إجراءً:",['inline_keyboard'=>[[['text'=>'➕ إضافة حظر','callback_data'=>'ban'],['text'=>'➖ إلغاء حظر','callback_data'=>'unban']],[['text'=>'🔙 عودة','callback_data'=>'back_admin']]]]);}  
+        if($cbd=='ban'){ file_put_contents($this->d.'/st.txt','ban'); $this->edit($chat,$mid,"🆔 أرسل الأيدي المراد حظره من البوت:",['inline_keyboard'=>[[['text'=>'🔙 تراجع','callback_data'=>'ban_sec']]]]);}  
+        if(file_get_contents($this->d.'/st.txt')=='ban'&&$txt&&is_numeric($txt)&&$uid==$this->a){ if(!$this->isB($txt)){ $this->wr('b',$txt); $this->send($txt,"🚫 تم حظرك من استخدام البوت من قبل الإدارة."); $this->send($chat,"✅ تم بنجاح حظر الأيدي: $txt"); }else $this->send($chat,"⚠️ هذا الأيدي محظور بالفعل."); file_put_contents($this->d.'/st.txt','');}  
+        if($cbd=='unban'){ file_put_contents($this->d.'/st.txt','unban'); $this->edit($chat,$mid,"🆔 أرسل الأيدي لإلغاء حظره:",['inline_keyboard'=>[[['text'=>'🔙 تراجع','callback_data'=>'ban_sec']]]]);}  
+        if(file_get_contents($this->d.'/st.txt')=='unban'&&$txt&&is_numeric($txt)&&$uid==$this->a){ if($this->isB($txt)){ $ls=$this->rd('b'); $nl=array_filter($ls,fn($id)=>$id!=$txt); file_put_contents($this->d.'/b.txt',implode("\n",$nl)); $this->send($txt,"✅ تم إلغاء الحظر عنك، يمكنك استخدام البوت الآن."); $this->send($chat,"✅ تم إلغاء حظر الأيدي: $txt"); }else $this->send($chat,"⚠️ هذا الأيدي ليس في قائمة الحظر."); file_put_contents($this->d.'/st.txt','');}  
+
+        // قسم إدارة الـ VIP للأدمن
+        if($cbd == 'vip_sec') {
+            $this->edit($chat, $mid, "👑 لوحة تحكم الـ VIP\nالمشتركين الحاليين: $vc\n\nاختر إجراءً لتعديل رتب المستخدمين:", [
+                'inline_keyboard' => [
+                    [['text'=>'➕ إضافة مستخدم VIP', 'callback_data'=>'add_vip'], ['text'=>'➖ إزالة مستخدم VIP', 'callback_data'=>'del_vip']],
+                    [['text'=>'🔙 عودة للوحة التحكم', 'callback_data'=>'back_admin']]
+                ]
+            ]);
+        }
+        if($cbd == 'add_vip') {
+            file_put_contents($this->d.'/st.txt', 'add_vip');
+            $this->edit($chat, $mid, "🆔 أرسل ايدي المستخدم المراد ترقيته إلى VIP:", [['inline_keyboard'=>[[['text'=>'🔙 تراجع', 'callback_data'=>'vip_sec']]]]]);
+        }
+        if(file_get_contents($this->d.'/st.txt') == 'add_vip' && $txt && is_numeric($txt) && $uid == $this->a) {
+            if(!$this->isVip($txt)) {
+                $this->wr('vip', $txt);
+                $this->send($txt, "👑 تهانينا! تم تفعيل رتبة الـ VIP لحسابك بواسطة الإدارة، يمكنك استخدام البوت الآن بدون إعلانات أو روابط إجبارية.");
+                $this->send($chat, "✅ تم ترقية المستخدم `$txt` بنجاح إلى VIP.");
+            } else {
+                $this->send($chat, "⚠️ هذا المستخدم مفعّل بالفعل كـ VIP.");
+            }
+            file_put_contents($this->d.'/st.txt', '');
+        }
+        if($cbd == 'del_vip') {
+            file_put_contents($this->d.'/st.txt', 'del_vip');
+            $this->edit($chat, $mid, "🆔 أرسل ايدي المستخدم المراد إلغاء الـ VIP عنه:", [['inline_keyboard'=>[[['text'=>'🔙 تراجع', 'callback_data'=>'vip_sec']]]]]);
+        }
+        if(file_get_contents($this->d.'/st.txt') == 'del_vip' && $txt && is_numeric($txt) && $uid == $this->a) {
+            if($this->isVip($txt)) {
+                $vips = $this->rd('vip');
+                $nv = array_filter($vips, fn($id) => $id != $txt);
+                file_put_contents($this->d.'/vip.txt', implode("\n", $nv));
+                $this->send($txt, "⚠️ تم إلغاء اشتراك الـ VIP الخاص بك من قبل الإدارة.");
+                $this->send($chat, "✅ تم سحب الـ VIP من الحساب: $txt");
+            } else {
+                $this->send($chat, "⚠️ هذا المستخدم ليس VIP من الأساس.");
+            }
+            file_put_contents($this->d.'/st.txt', '');
+        }
+
+        // إرسال رسالة مخصصة لأيدي معين
+        if($cbd=='msg_sec'){ file_put_contents($this->d.'/s.txt','msg_id'); $this->edit($chat,$mid,"📨 أرسل أيدي المستخدم الذي تود مراسلته عبر البوت:",['inline_keyboard'=>[[['text'=>'🔙 عودة','callback_data'=>'back_admin']]]]);}  
+        if($st=='msg_id'&&$txt&&is_numeric($txt)&&$uid==$this->a){ file_put_contents($this->d.'/ms.txt',$txt); file_put_contents($this->d.'/s.txt','msg_txt'); $this->send($chat,"✏️ الآن أرسل نص الرسالة الموجهة له:",['inline_keyboard'=>[[['text'=>'🔙 عودة','callback_data'=>'msg_sec']]]]);}  
+        if($st=='msg_txt'&&$txt&&$uid==$this->a){ $tgt=file_get_contents($this->d.'/ms.txt'); $this->send($tgt,"📩 رسالة من الإدارة:\n\n$txt"); $this->send($chat,"✅ تم إرسال رسالتك بنجاح.",['inline_keyboard'=>[[['text'=>'🔙 عودة','callback_data'=>'back_admin']]]]); file_put_contents($this->d.'/s.txt',''); file_put_contents($this->d.'/ms.txt','');}  
+
+        // إعدادات 5sim
+        if($cbd=='api'){ $cfg=$this->cfg(); $t5=$cfg['5sim']??'غير مضبوط'; $this->edit($chat,$mid,"🔧 إعدادات سيرفر 5sim:\n\n🔑 التوكن الحالي: `$t5`",['inline_keyboard'=>[[['text'=>'🔑 تغيير التوكن','callback_data'=>'set_5sim']],[['text'=>'💰 فحص رصيد السيرفر','callback_data'=>'bal_5sim']],[['text'=>'🔙 عودة','callback_data'=>'back_admin']]],'MarkdownV2');}  
+        if($cbd=='set_5sim'){ file_put_contents($this->d.'/s.txt','set_5sim'); $this->edit($chat,$mid,"🔑 أرسل توكن حسابك في 5sim الآن:",['inline_keyboard'=>[[['text'=>'🔙 عودة','callback_data'=>'api']]]]);}  
+        if($st=='set_5sim'&&$txt&&$uid==$this->a){ $cfg=$this->cfg(); $cfg['5sim']=$txt; $this->saveCfg($cfg); file_put_contents($this->d.'/s.txt',''); $this->send($chat,"✅ تم حفظ توكن 5sim الجديد بنجاح.",['inline_keyboard'=>[[['text'=>'🔙 عودة','callback_data'=>'api']]]]);}  
+        if($cbd=='bal_5sim'){ $cfg=$this->cfg(); $t5=$cfg['5sim']??''; if(!$t5){ $this->ans($cb->id,"❌ لم تقم بضبط التوكن بعد!",1); return;} $ch=curl_init(); curl_setopt($ch,CURLOPT_URL,"https://5sim.net/v1/user/profile"); curl_setopt($ch,CURLOPT_RETURNTRANSFER,1); curl_setopt($ch,CURLOPT_HTTPHEADER,["Authorization: Bearer $t5"]); $res=curl_exec($ch); curl_close($ch); $data=json_decode($res,1); $bal=$data['balance']??0; $this->ans($cb->id,"💰 رصيدك في السيرفر هو: $bal RUB",1);}  
+
+        // واجهة المستخدم العادي
+        $user_status_text = $this->isVip($uid) ? "👑 حسابك: VIP (بدون إعلانات وروابط)" : "👤 حسابك: عادي";
+        $main_keyboard = [
+            'inline_keyboard' => [
+                [['text'=>'❤️ تفاعل', 'callback_data'=>'cr_interaction'], ['text'=>'🌐 أرقام', 'callback_data'=>'cr_numbers']],
+                [['text'=>'🗑 منع تصفية', 'callback_data'=>'cr_filter'], ['text'=>'👍 لايكات', 'callback_data'=>'cr_likes']],
+                [['text'=>'♻️ ويب هوك', 'callback_data'=>'cr_webhook']],
+                [['text'=>'👑 تفعيل VIP (دفع Binance)', 'callback_data'=>'buy_vip']],
+                [['text'=>'🔙 القائمة الرئيسية', 'callback_data'=>'back_main']]
+            ]
+        ];
+
+        if($txt == '/start' && $uid != $this->a) {
+            $this->addM($uid);
+            $this->send($chat, "مرحباً بك يا $name في مصنع الذئب للأقسام الفرعية 🤖\n\n$user_status_text\n\nالرجاء اختيار نوع البوت المراد إنشاؤه من الأزرار بالأسفل:", $main_keyboard);
+        }  
+
+        if($cbd == 'back_main') {
+            $this->edit($chat, $mid, "الرجاء اختيار نوع البوت المراد إنشاؤه من الأزرار بالأسفل:\n\n$user_status_text", $main_keyboard);
+        }  
+
+        if($cbd == 'buy_vip') {
+            $msg_text = "👑 **مميزات رتبة الـ VIP:**\n"
+                      . "• استلام روابط بوتاتك الفرعية مباشرة بدون إعلانات روابط مزعجة.\n"
+                      . "• استخدام البوت بالكامل بدون اشتراكات إجبارية في القنوات.\n\n"
+                      . "💳 **طريقة الدفع عبر بينانس (Binance Pay):**\n"
+                      . "قم بتحويل رسوم الاشتراك إلى مٌعرف الدفع الخاص بنا:\n"
+                      . "🔢 Binance ID: `{$this->binance_id}`\n\n"
+                      . "💡 بعد إتمام عملية الدفع بنجاح، قم بتصوير الشاشة أو نسخ **رقم المعاملة (TxID)** وإرسالها هنا في المحادثة مباشرةً ليتم تفعيل حسابك يدوياً من قبل الإدارة.";
+            
+            $this->edit($chat, $mid, $msg_text, ['inline_keyboard'=>[[['text'=>'🔙 عودة للمصنع', 'callback_data'=>'back_main']]]], 'Markdown');
+        }
+
+        // معالجة تفعيل وصناعة البوتات الفرعية واختصار الروابط تلقائياً
+        $pend = json_decode(@file_get_contents($this->d.'/p.txt'), 1) ?: [];  
+        
+        if(strpos($cbd, 'cr_') === 0) {
+            $tp = str_replace('cr_', '', $cbd);
+            $pend[$uid] = ['tp'=>$tp, 'step'=>'tok'];
+            file_put_contents($this->d.'/p.txt', json_encode($pend));
+            $this->edit($chat, $mid, "🔑 حسناً، أرسل الآن توكن البوت الخاص بك الذي حصلت عليه من @BotFather:", ['inline_keyboard'=>[[['text'=>'🔙 تراجع', 'callback_data'=>'back_main']]]]);
+        }  
+
+        if(isset($pend[$uid]['step']) && $pend[$uid]['step'] == 'tok' && $txt) {
+            $tp = $pend[$uid]['tp'];
+            $bt = $txt;
+            $chk = json_decode(@file_get_contents("https://api.telegram.org/bot$bt/getMe"), 1);
+            if(!$chk['ok']) {
+                $this->send($chat, "❌ التوكن غير صحيح أو انتهت صلاحيته! يرجى التأكد وإعادة المحاولة.");
+                return;
+            }
+            $bu = $chk['result']['username'];
+            $dir = $this->d."/bots/{$tp}_{$uid}";
+            if(!is_dir($dir)) mkdir($dir, 0777, 1);
+            $wh = "https://".$_SERVER['HTTP_HOST'].dirname($_SERVER['SCRIPT_NAME'])."/@j49_c_data/bots/{$tp}_{$uid}/bot.php";
+            @file_get_contents("https://api.telegram.org/bot$bt/setwebhook?url=$wh&drop_pending_updates=true");
+            $code = $this->tmpl($tp, $bt, $bu, $uid);
+            file_put_contents($dir."/bot.php", $code);
+            unset($pend[$uid]);
+            file_put_contents($this->d.'/p.txt', json_encode($pend));
+            
+            $direct_bot_url = "https://t.me/$bu";
+
+            // فحص الرتبة وتسليم الرابط
+            if ($this->isVip($uid)) {
+                // المشترك الـ VIP يستلم الرابط المباشر فوراً بدون اختصار
+                $this->send($chat, "👑 لأنك مشترك VIP، تم إنشاء بوتك الفرعي بنجاح وبدون أي إعلانات روابط!\n\nمعرف البوت: @$bu", [
+                    'inline_keyboard' => [
+                        [['text' => '🚀 فتح البوت مباشرة', 'url' => $direct_bot_url]],
+                        [['text' => '🔙 العودة للمصنع', 'callback_data' => 'back_main']]
+                    ]
+                ]);
+            } else {
+                // المستخدم العادي: يتم اختصار الرابط له تلقائياً عبر الـ API الخاص بك
+                // تم تعديل رابط طلب الاختصار ليناسب شبكات Cuts-url ومثيلاتها
+                $api_url = "https://cuts-url.com/api?api=" . $this->short_api . "&url=" . urlencode($direct_bot_url);
+                
+                $ch = curl_init($api_url);
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                $response = curl_exec($ch);
+                curl_close($ch);
+                
+                $result = json_decode($response, true);
+                $short_url = $result['shortedUrl'] ?? $result['short_url'] ?? null;
+                
+                if ($short_url) {
+                    $this->send($chat, "✅ تم إنشاء بوتك بنجاح في الخطة المجانية!\n\n⚠️ لتفعيل البوت والحصول على الرابط، يرجى الضغط على رابط التفعيل أدناه وتخطي الإعلانات:\n\n🔗 $short_url", [
+                        'inline_keyboard' => [
+                            [['text' => '🔗 رابط تفعيل البوت المباشر', 'url' => $short_url]],
+                            [['text' => '👑 تفعيل VIP لإلغاء الإعلانات', 'callback_data' => 'buy_vip']],
+                            [['text' => '🔙 العودة للمصنع', 'callback_data' => 'back_main']]
+                        ]
+                    ]);
+                } else {
+                    // احتياطي في حال حدوث مشكلة في سيرفر موقع الاختصار
+                    $this->send($chat, "✅ تم إنشاء بوتك بنجاح!\n\nمعرف البوت: @$bu", [
+                        'inline_keyboard' => [
+                            [['text' => '🚀 فتح البوت', 'url' => $direct_bot_url]],
+                            [['text' => '🔙 العودة للمصنع', 'callback_data' => 'back_main']]
+                        ]
+                    ]);
+                }
+            }
+
+            $this->send($this->a, "🆕 بوت جديد من $name (@$user)\nالنوع: $tp\nرابط البوت: @$bu");
+            return;
+        }  
+
+        if($txt && $uid != $this->a && !isset($pend[$uid]['step'])) {
+            $this->send($this->a, "💰 **طلب تفعيل VIP جديد أو رسالة مستخدم:**\n\nالعضو: $name (@$user)\nالأيدي: `$uid`\n\nالرسالة/الإثبات:\n$txt");
+            $this->send($chat, "⏳ تم إرسال إثبات الدفع إلى الإدارة بنجاح. سيتم فحص المعاملة وتفعيل حسابك خلال دقائق!");
+        }
+
+        if($uid && $uid != $this->a && !$this->isM($uid)) $this->addM($uid);
+    }  
+
+    private function tmpl($t, $tk, $bu, $oid) {
+        $arr = [
+            'interaction' => '<?php $T="'.$tk.'";function b($m,$d=[]){$u="https://api.telegram.org/bot".$GLOBALS["T"]."/$m";$c=curl_init($u);curl_setopt($c,CURLOPT_RETURNTRANSFER,1);curl_setopt($c,CURLOPT_POST,1);curl_setopt($c,CURLOPT_POSTFIELDS,http_build_query($d));$r=curl_exec($c);curl_close($c);return json_decode($r);}$up=json_decode(file_get_contents("php://input"));$m=$up->message;if($m){$cid=$m->chat->id;$mid=$m->message_id;$e=["❤️","🔥","👍","😍"];$em=$e[array_rand($e)];b("setMessageReaction",["chat_id"=>$cid,"message_id"=>$mid,"reaction"=>json_encode([["type"=>"emoji","emoji"=>$em]])]);}echo "ok";',
+            'numbers' => '<?php $T="'.$tk.'";$O='.$oid.';$cfg=json_decode(file_get_contents("c.json"),1);if(!$cfg)$cfg=["5sim"=>""];function b($m,$d=[]){$u="https://api.telegram.org/bot".$GLOBALS["T"]."/$m";$c=curl_init($u);curl_setopt($c,CURLOPT_RETURNTRANSFER,1);curl_setopt($c,CURLOPT_POST,1);curl_setopt($c,CURLOPT_POSTFIELDS,http_build_query($d));$r=curl_exec($c);curl_close($c);return json_decode($r);}$up=json_decode(file_get_contents("php://input"));$msg=$up->message;$cb=$up->callback_query;$uid=$msg->from->id??$cb->from->id??0;$chat=$msg->chat->id??$cb->message->chat->id??0;$txt=$msg->text??"";$cbd=$cb->data??"";$us=explode("\n",file_get_contents("u.txt"));if($msg&&!in_array($uid,$us))file_put_contents("u.txt",$uid."\n",FILE_APPEND);$s=json_decode(file_get_contents("s.json"),1)?:[];if($txt=="/start"){b("sendMessage",["chat_id"=>$chat,"text"=>"🌐 رصيدك: ".($s[$uid]["b"]??0)." RUB","reply_markup"=>json_encode(["inline_keyboard"=>[[["text"=>"📱 شراء","callback_data"=>"buy"]]]])]);}if($cbd=="buy"){b("sendMessage",["chat_id"=>$chat,"text"=>"اختر التطبيق","reply_markup"=>json_encode(["inline_keyboard"=>[[["text"=>"WhatsApp","callback_data"=>"app_wa"],["text"=>"Telegram","callback_data"=>"app_tg"]],[["text"=>"🔙","callback_data"=>"back"]]]])]);}echo "ok";',
+            'filter' => '<?php $T="'.$tk.'";function b($m,$d=[]){$u="https://api.telegram.org/bot".$GLOBALS["T"]."/$m";$c=curl_init($u);curl_setopt($c,CURLOPT_RETURNTRANSFER,1);curl_setopt($c,CURLOPT_POST,1);curl_setopt($c,CURLOPT_POSTFIELDS,http_build_query($d));$r=curl_exec($c);curl_close($c);return json_decode($r);}$up=json_decode(file_get_contents("php://input"));$ch=$up->channel_post;if($ch){$cid=$ch->chat->id;$mid=$ch->message_id;$t=$ch->text??"";if(preg_match("/(http|t\.me|@)/i",$t))b("deleteMessage",["chat_id"=>$cid,"message_id"=>$mid]);}echo "ok";',
+            'likes' => '<?php $T="'.$tk.'";function b($m,$d=[]){$u="https://api.telegram.org/bot".$GLOBALS["T"]."/$m";$c=curl_init($u);curl_setopt($c,CURLOPT_RETURNTRANSFER,1);curl_setopt($c,CURLOPT_POST,1);curl_setopt($c,CURLOPT_POSTFIELDS,http_build_query($d));$r=curl_exec($c);curl_close($c);return json_decode($r);}$up=json_decode(file_get_contents("php://input"));$iq=$up->inline_query;if($iq&&$iq->query){$q=$iq->query;b("answerInlineQuery",["inline_query_id"=>$iq->id,"results"=>json_encode([["type"=>"article","id"=>"1","title"=>"انشر","input_message_content"=>["message_text"=>$q],"reply_markup"=>json_encode(["inline_keyboard"=>[[["text"=>"👍","callback_data"=>"like"]],["text"=>"👎","callback_data"=>"dislike"]]]])])]);}echo "ok";',
+            'webhook' => '<?php $T="'.$tk.'";function b($m,$d=[]){$u="https://api.telegram.org/bot".$GLOBALS["T"]."/$m";$c=curl_init($u);curl_setopt($c,CURLOPT_RETURNTRANSFER,1);curl_setopt($c,CURLOPT_POST,1);curl_setopt($c,CURLOPT_POSTFIELDS,http_build_query($d));$r=curl_exec($c);curl_close($c);return json_decode($r);}$up=json_decode(file_get_contents("php://input"));$msg=$up->message;if($msg&&$msg->text=="/start"){b("sendMessage",["chat_id"=>$msg->chat->id,"text"=>"🔗 أرسل رابط الويب هوك"]);}echo "ok";'
+        ];
+        return $arr[$t] ?? '<?php echo "Invalid type";';
+    }
+}  
+
+$wf = new WolfFactory();
+$wf->run();
+echo "الذئب الأبيض @j49_c | جاهز تماماً بالاختصار التلقائي والـ VIP";  
+?>
